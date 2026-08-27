@@ -1,6 +1,7 @@
 import hashlib
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 from demoparser2 import DemoParser
 
@@ -25,16 +26,28 @@ def file_hash(path: str) -> str:
     return h.hexdigest()[:16]
 
 
+def _add_round_index(deaths: pd.DataFrame, rounds: pd.DataFrame) -> pd.DataFrame:
+    """player_death has no round column; derive the 0-based round index from
+    round_end ticks (a death belongs to the first round whose end tick is
+    >= the death tick)."""
+    if deaths.empty or rounds.empty:
+        return deaths.assign(total_rounds_played=0)
+    end_ticks = np.sort(rounds["tick"].to_numpy())
+    idx = np.searchsorted(end_ticks, deaths["tick"].to_numpy(), side="left")
+    idx = np.clip(idx, 0, len(end_ticks) - 1)
+    return deaths.assign(total_rounds_played=idx)
+
+
 def parse_demo(path: str) -> ParsedDemo:
     parser = DemoParser(path)
     header = dict(parser.parse_header())
-    deaths = parser.parse_event("player_death")
-    hurts = parser.parse_event("player_hurt")
     rounds = parser.parse_event("round_end")
+    deaths = _add_round_index(parser.parse_event("player_death"), rounds)
+    hurts = parser.parse_event("player_hurt")
     freeze_ends = parser.parse_event("round_freeze_end")
     if len(freeze_ends) > 0:
         economy = parser.parse_ticks(
-            ["balance", "current_equip_value"],
+            ["balance", "current_equip_value", "team_num"],
             ticks=freeze_ends["tick"].tolist(),
         )
     else:
