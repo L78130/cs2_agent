@@ -7,8 +7,8 @@ import pandas as pd
 from demo_coach.parsing import ParsedDemo, parse_demo
 
 CACHE_DIR = Path(os.environ.get("DEMO_COACH_CACHE_DIR", "cache"))
-CACHE_VERSION = 2  # bump when parsed frame schemas change (v2: death positions)
-_FRAMES = ["deaths", "hurts", "rounds", "economy"]
+CACHE_VERSION = 3  # bump when parsed frame schemas change (v3: position samples)
+_FRAMES = ["deaths", "hurts", "rounds", "economy", "positions"]
 
 
 def save(parsed: ParsedDemo) -> None:

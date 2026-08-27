@@ -106,6 +106,13 @@
   }
   @keyframes rot { to { transform: rotate(360deg); } }
   .hint { color: var(--dim); font-size: .85rem; }
+  #replay-bar { display: flex; gap: .6rem; align-items: center; margin-bottom: .6rem; }
+  #replay-bar .btn.sm { padding: .3rem .7rem; font-size: .8rem; }
+  #timeline { flex: 1; accent-color: var(--accent); }
+  #speed {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: .25rem;
+  }
 </style>
 </head>
 <body>
@@ -119,6 +126,12 @@
 
   <div id="center">
     <div id="rounds"></div>
+    <div id="replay-bar" hidden>
+      <button class="btn sm" id="play-btn" onclick="togglePlay()">▶ Replay</button>
+      <input type="range" id="timeline" min="0" max="100" value="0" step="any" disabled>
+      <select id="speed" disabled><option value="1">1x</option><option value="2">2x</option><option value="4">4x</option></select>
+      <span id="clock" class="hint"></span>
+    </div>
     <div id="radar-wrap">
       <canvas id="radar" width="1024" height="1024" hidden></canvas>
       <span id="radar-empty">upload a demo to see the 2D round map</span>
@@ -151,7 +164,10 @@
 
 <script>
 let demoId = null, history = [], matches = {}, curRound = 0, mapData = null;
+let replayData = null, playing = false, playTick = 0, lastFrame = 0;
+let hoverables = [], hover = null;
 
+const TICK_RATE = 64;
 const $ = id => document.getElementById(id);
 const overlay = (show, text) => {
   $("overlay").classList.toggle("show", show);
@@ -166,6 +182,14 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
 });
 
 $("file").onchange = () => upload();
+$("speed").onchange = e => { speed = parseFloat(e.target.value); };
+let speed = 1;
+$("timeline").oninput = e => {
+  if (!replayData) return;
+  playTick = parseFloat(e.target.value);
+  for (const p of replayData.players) p._i = 0;
+  drawReplay();
+};
 
 async function upload() {
   const f = $("file").files[0];
@@ -194,7 +218,6 @@ async function refreshMatches(selectId) {
   if (selectId) selectMatch(selectId);
 }
 
-// direct access to backend tool functions (no LLM involved)
 async function toolQuery(id, name, args) {
   const r = await fetch(`/api/matches/${id}/tool/${name}`, {
     method: "POST", headers: {"Content-Type": "application/json"},
@@ -244,45 +267,183 @@ function renderRounds(n) {
   }).catch(() => {});
 }
 
+// ---- radar rendering ----
+const TEAM_COLOR = { 2: "#e8b23a", 3: "#4aa3ff" };
+
+function radarCtx() {
+  const c = $("radar");
+  return [c, c.getContext("2d"), c.width / 1024];
+}
+function toPx(x, y, cal, k2) {
+  return [(x - cal.pos_x) / cal.scale * k2, (cal.pos_y - y) / cal.scale * k2];
+}
+function drawKillMark(ctx, x, y, headshot) {
+  ctx.strokeStyle = headshot ? "#ff5252" : "#f0a500"; ctx.lineWidth = 2.5;
+  const s = 6;
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
+  ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s);
+  ctx.stroke();
+}
+function drawHoverTooltip(ctx) {
+  if (!hover) return;
+  ctx.font = "13px system-ui";
+  const w = ctx.measureText(hover.label).width + 12;
+  const x = Math.min(Math.max(hover.x - w / 2, 2), 1024 - w - 2);
+  const y = Math.max(hover.y - 26, 4);
+  ctx.fillStyle = "rgba(13,17,23,.9)";
+  ctx.strokeStyle = "#f0a500"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(x, y, w, 20, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#e6edf3";
+  ctx.fillText(hover.label, x + 6, y + 14);
+}
+
+// static kill map
+function drawRadar() {
+  const c = $("radar"), ctx = c.getContext("2d"), k2 = c.width / 1024;
+  const img = new Image();
+  img.onload = () => {
+    c.hidden = false; $("radar-empty").style.display = "none";
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    hoverables = [];
+    for (const k of mapData.kills) {
+      const [ax, ay] = toPx(k.attacker_x, k.attacker_y, mapData.calibration, k2);
+      const [vx, vy] = toPx(k.victim_x, k.victim_y, mapData.calibration, k2);
+      ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.stroke();
+      ctx.fillStyle = "#4aa3ff";
+      ctx.beginPath(); ctx.arc(ax, ay, 4, 0, 7); ctx.fill();
+      drawKillMark(ctx, vx, vy, k.headshot);
+      hoverables.push({ x: ax, y: ay, label: k.attacker + " (attacker)" });
+      hoverables.push({ x: vx, y: vy, label: k.victim + " — " + k.weapon + (k.headshot ? " ◉" : "") });
+    }
+    drawHoverTooltip(ctx);
+  };
+  img.src = mapData.image;
+}
+
+// replay
+async function togglePlay() {
+  if (replayData) {
+    playing = !playing;
+    $("play-btn").textContent = playing ? "⏸" : "▶ Replay";
+    if (playing) { lastFrame = performance.now(); requestAnimationFrame(tickReplay); }
+    return;
+  }
+  overlay(true, "loading replay data...");
+  try {
+    const r = await fetch(`/api/matches/${demoId}/rounds/${curRound}/replay`);
+    if (!r.ok) return;
+    replayData = await r.json();
+    replayData.players.forEach(p => p._i = 0);
+    const tl = $("timeline");
+    tl.min = replayData.start; tl.max = replayData.end; tl.disabled = false;
+    $("speed").disabled = false;
+    playTick = replayData.start;
+    playing = true;
+    $("play-btn").textContent = "⏸";
+    lastFrame = performance.now();
+    requestAnimationFrame(tickReplay);
+  } finally { overlay(false); }
+}
+
+function stopReplay() {
+  replayData = null; playing = false;
+  $("play-btn").textContent = "▶ Replay";
+  $("timeline").disabled = true; $("speed").disabled = true;
+  $("clock").textContent = "";
+}
+
+function posAt(p, tick) {
+  const f = p.frames;
+  if (!f.length) return null;
+  let i = p._i;
+  if (f[i][0] > tick) { i = 0; }  // seeked backward
+  while (i < f.length - 1 && f[i + 1][0] <= tick) i++;
+  p._i = i;
+  const a = f[i], b = f[i + 1] || a;
+  const span = b[0] - a[0];
+  const t = span > 0 ? Math.min(1, (tick - a[0]) / span) : 0;
+  return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+function tickReplay(now) {
+  if (!replayData) return;
+  if (playing) {
+    playTick += (now - lastFrame) / 1000 * TICK_RATE * speed;
+    if (playTick >= replayData.end) { playTick = replayData.end; playing = false; $("play-btn").textContent = "▶ Replay"; }
+    $("timeline").value = playTick;
+  }
+  lastFrame = now;
+  drawReplay();
+  if (playing || replayData) requestAnimationFrame(tickReplay);
+}
+
+function drawReplay() {
+  const [c, ctx, k2] = radarCtx();
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    hoverables = [];
+    // kill markers for kills that already happened
+    for (const k of replayData.kills) {
+      if (k.tick > playTick) continue;
+      const [vx, vy] = toPx(k.victim_x, k.victim_y, replayData.calibration, k2);
+      drawKillMark(ctx, vx, vy, k.headshot);
+      hoverables.push({ x: vx, y: vy, label: k.victim + " — " + k.weapon });
+    }
+    // player dots
+    for (const p of replayData.players) {
+      const dead = p.death_tick !== null && playTick >= p.death_tick;
+      const pos = posAt(p, Math.min(playTick, p.death_tick ?? playTick));
+      if (!pos) continue;
+      const [x, y] = toPx(pos[0], pos[1], replayData.calibration, k2);
+      ctx.globalAlpha = dead ? 0.25 : 1;
+      ctx.fillStyle = TEAM_COLOR[p.team] || "#ccc";
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+      if (!dead) hoverables.push({ x, y, label: p.name });
+    }
+    drawHoverTooltip(ctx);
+    const secs = Math.max(0, (playTick - replayData.start) / TICK_RATE);
+    $("clock").textContent = `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
+  };
+  img.src = replayData.image;
+}
+
+// hover hit-testing (shared by static map and replay)
+$("radar").addEventListener("mousemove", e => {
+  const c = $("radar"), rect = c.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (c.width / rect.width);
+  const my = (e.clientY - rect.top) * (c.height / rect.height);
+  let best = null, bestD = 144; // 12px radius
+  for (const h of hoverables) {
+    const d = (h.x - mx) ** 2 + (h.y - my) ** 2;
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  const changed = best !== hover;
+  hover = best;
+  c.style.cursor = hover ? "pointer" : "default";
+  if (changed && !playing) (replayData ? drawReplay() : drawRadar());
+});
+$("radar").addEventListener("mouseleave", () => {
+  hover = null;
+  if (!playing) (replayData ? drawReplay() : drawRadar());
+});
+
 async function loadRound(n) {
   curRound = n;
+  stopReplay();
   document.querySelectorAll(".rnd").forEach(el => el.classList.remove("active"));
   const btn = $("rnd-" + n); if (btn) btn.classList.add("active");
   const r = await fetch(`/api/matches/${demoId}/rounds/${n}/map`);
   if (!r.ok) { $("radar-empty").textContent = "no radar for this map"; $("radar").hidden = true; return; }
   mapData = await r.json();
+  $("replay-bar").hidden = false;
   drawRadar();
   const feed = mapData.kills.map(k =>
     `${k.attacker} [${k.weapon}${k.headshot ? " ◉" : ""}] ${k.victim}`).join("  ·  ");
   $("killfeed").textContent = feed || "no kills this round";
-}
-
-function drawRadar() {
-  const c = $("radar"), ctx = c.getContext("2d");
-  const img = new Image();
-  img.onload = () => {
-    c.hidden = false; $("radar-empty").style.display = "none";
-    ctx.drawImage(img, 0, 0, c.width, c.height);
-    const cal = mapData.calibration;
-    const k2 = c.width / 1024;
-    const toPx = (x, y) => [(x - cal.pos_x) / cal.scale * k2,
-                            (cal.pos_y - y) / cal.scale * k2];
-    for (const k of mapData.kills) {
-      const [ax, ay] = toPx(k.attacker_x, k.attacker_y);
-      const [vx, vy] = toPx(k.victim_x, k.victim_y);
-      ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(vx, vy); ctx.stroke();
-      ctx.fillStyle = "#4aa3ff";
-      ctx.beginPath(); ctx.arc(ax, ay, 4, 0, 7); ctx.fill();
-      ctx.strokeStyle = k.headshot ? "#ff5252" : "#f0a500"; ctx.lineWidth = 2.5;
-      const s = 6;
-      ctx.beginPath();
-      ctx.moveTo(vx - s, vy - s); ctx.lineTo(vx + s, vy + s);
-      ctx.moveTo(vx + s, vy - s); ctx.lineTo(vx - s, vy + s);
-      ctx.stroke();
-    }
-  };
-  img.src = mapData.image;
 }
 
 async function send() {

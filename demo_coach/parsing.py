@@ -1,12 +1,13 @@
 import hashlib
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
 from demoparser2 import DemoParser
 
 TICK_RATE = 64  # CS2 demo tick rate; used for time-window calculations
+SAMPLE_EVERY = 8  # position sampling stride: 8 ticks = 8 samples/sec at 64 tick
 
 
 @dataclass
@@ -17,6 +18,7 @@ class ParsedDemo:
     hurts: pd.DataFrame     # player_hurt events
     rounds: pd.DataFrame    # round_end events
     economy: pd.DataFrame   # balance/equip_value snapshot at each round_freeze_end
+    positions: pd.DataFrame = field(default_factory=pd.DataFrame)  # sampled player positions (every SAMPLE_EVERY ticks)
 
 
 def file_hash(path: str) -> str:
@@ -69,7 +71,16 @@ def parse_demo(path: str) -> ParsedDemo:
         economy = pd.DataFrame(
             columns=["tick", "name", "team_num", "balance", "current_equip_value"]
         )
+    if len(rounds) > 0:
+        last_tick = int(rounds["tick"].max()) + TICK_RATE * 5
+        positions = parser.parse_ticks(
+            ["X", "Y", "team_num"],
+            ticks=list(range(0, last_tick, SAMPLE_EVERY)),
+        )
+    else:
+        positions = pd.DataFrame(columns=["tick", "name", "team_num", "X", "Y"])
     return ParsedDemo(
         demo_id=file_hash(path), header=header,
         deaths=deaths, hurts=hurts, rounds=rounds, economy=economy,
+        positions=positions,
     )

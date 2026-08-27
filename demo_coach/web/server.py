@@ -114,3 +114,54 @@ def tool_call(demo_id: str, name: str, args: dict = {}):
     if ctx is None:
         raise HTTPException(404, "unknown demo_id")
     return json.loads(dispatch(ctx, name, args))
+
+
+@app.get("/api/matches/{demo_id}/rounds/{n}/replay")
+def round_replay(demo_id: str, n: int):
+    ctx = CONTEXTS.get(demo_id)
+    if ctx is None:
+        raise HTTPException(404, "unknown demo_id")
+    parsed = ctx.parsed
+    map_name = parsed.header.get("map_name") or "unknown"
+    cal = load_calibration(map_name)
+    if cal is None:
+        raise HTTPException(404, f"no radar available for map {map_name}")
+    rounds = parsed.rounds.sort_values("tick").reset_index(drop=True)
+    if n < 0 or n >= len(rounds):
+        raise HTTPException(404, f"no round {n}")
+    end = int(rounds.iloc[n]["tick"])
+    freeze_ticks = sorted(parsed.economy["tick"].unique()) if not parsed.economy.empty else []
+    start = int(freeze_ticks[n]) if n < len(freeze_ticks) else 0
+
+    deaths = parsed.deaths
+    round_kills = deaths[deaths["total_rounds_played"] == n]
+    death_tick = {}
+    for _, k in round_kills.iterrows():
+        death_tick.setdefault(k["user_name"], int(k["tick"]))
+
+    pos = parsed.positions
+    pos = pos[(pos["tick"] >= start) & (pos["tick"] <= end)]
+    players = []
+    for name, g in pos.groupby("name"):
+        frames = [[int(r["tick"]), round(float(r["X"]), 1), round(float(r["Y"]), 1)]
+                  for _, r in g.sort_values("tick").iterrows()]
+        players.append({
+            "name": name,
+            "team": int(g["team_num"].iloc[0]) if "team_num" in g else 0,
+            "death_tick": death_tick.get(name),
+            "frames": frames,
+        })
+    return {
+        "map": map_name, "calibration": cal,
+        "image": f"/static/maps/{map_name}.png",
+        "start": start, "end": end,
+        "players": players,
+        "kills": [
+            {"tick": int(k["tick"]), "attacker": k["attacker_name"],
+             "victim": k["user_name"], "weapon": k["weapon"],
+             "headshot": bool(k["headshot"]),
+             "attacker_x": float(k["attacker_X"]), "attacker_y": float(k["attacker_Y"]),
+             "victim_x": float(k["user_X"]), "victim_y": float(k["user_Y"])}
+            for _, k in round_kills.iterrows()
+        ],
+    }
