@@ -1,19 +1,23 @@
 # demo_coach/web/server.py
+import json
 import os
 import shutil
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from demo_coach.agent import CoachAgent
-from demo_coach.tools import MatchContext, build_context
+from demo_coach.radar import load_calibration
+from demo_coach.tools import MatchContext, build_context, dispatch
 
 DEMOS_DIR = Path(os.environ.get("DEMO_COACH_DEMO_DIR", "demos"))
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="demo_coach")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 CONTEXTS: dict[str, MatchContext] = {}
 AGENTS: dict[str, CoachAgent] = {}
 
@@ -69,3 +73,44 @@ def chat(demo_id: str, req: ChatRequest):
     except Exception as e:
         raise HTTPException(502, f"LLM API error: {e}")
     return {"reply": reply}
+
+
+@app.get("/api/matches/{demo_id}/rounds/{n}/map")
+def round_map(demo_id: str, n: int):
+    ctx = CONTEXTS.get(demo_id)
+    if ctx is None:
+        raise HTTPException(404, "unknown demo_id")
+    map_name = ctx.parsed.header.get("map_name") or "unknown"
+    cal = load_calibration(map_name)
+    if cal is None:
+        raise HTTPException(404, f"no radar available for map {map_name}")
+    deaths = ctx.parsed.deaths
+    kills = deaths[deaths["total_rounds_played"] == n]
+    return {
+        "map": map_name,
+        "calibration": cal,
+        "image": f"/static/maps/{map_name}.png",
+        "kills": [
+            {
+                "tick": int(k["tick"]),
+                "attacker": k["attacker_name"],
+                "victim": k["user_name"],
+                "weapon": k["weapon"],
+                "headshot": bool(k["headshot"]),
+                "attacker_x": float(k["attacker_X"]),
+                "attacker_y": float(k["attacker_Y"]),
+                "victim_x": float(k["user_X"]),
+                "victim_y": float(k["user_Y"]),
+            }
+            for _, k in kills.iterrows()
+        ],
+    }
+
+
+@app.post("/api/matches/{demo_id}/tool/{name}")
+def tool_call(demo_id: str, name: str, args: dict = {}):
+    """Direct (no-LLM) access to tool functions for the UI panels."""
+    ctx = CONTEXTS.get(demo_id)
+    if ctx is None:
+        raise HTTPException(404, "unknown demo_id")
+    return json.loads(dispatch(ctx, name, args))

@@ -36,7 +36,10 @@ def _json(obj) -> str:
 
 
 def _get_scoreboard(ctx, args):
-    return _json(ctx.summary["scoreboard"])
+    df = ctx.scoreboard
+    if df is None or df.empty:
+        return _json([])
+    return _json(df.astype(object).where(df.notna(), None).to_dict("records"))
 
 
 def _get_round(ctx, args):
@@ -69,8 +72,16 @@ def _get_highlights(ctx, args):
     return _json(hl)
 
 
+def _get_rounds_log(ctx, args):
+    df = ctx.round_log
+    if df is None or df.empty:
+        return _json([])
+    return _json(df.astype(object).where(df.notna(), None).to_dict("records"))
+
+
 _FUNCS = {"get_scoreboard": _get_scoreboard, "get_round": _get_round,
-          "get_player": _get_player, "get_highlights": _get_highlights}
+          "get_player": _get_player, "get_highlights": _get_highlights,
+          "get_rounds_log": _get_rounds_log}
 
 TOOL_SCHEMAS = [
     {"type": "function", "function": {
@@ -89,6 +100,9 @@ TOOL_SCHEMAS = [
         "name": "get_highlights", "description": "Highlight moments; optional type filter: ace, 4k, 3k, clutch, knife",
         "parameters": {"type": "object", "properties": {
             "type": {"type": "string"}}}}},
+    {"type": "function", "function": {
+        "name": "get_rounds_log", "description": "Whole match round log: winner, end reason, buy types for every round",
+        "parameters": {"type": "object", "properties": {}}}},
 ]
 
 

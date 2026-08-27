@@ -54,7 +54,9 @@ def parse_demo(path: str) -> ParsedDemo:
     parser = DemoParser(path)
     header = dict(parser.parse_header())
     rounds = parser.parse_event("round_end")
-    deaths = _add_round_index(parser.parse_event("player_death"), rounds)
+    deaths = _add_round_index(
+        parser.parse_event("player_death", player=["X", "Y"]), rounds
+    )
     hurts = parser.parse_event("player_hurt")
     freeze_ends = parser.parse_event("round_freeze_end")
     _check_round_alignment(len(rounds), len(freeze_ends))

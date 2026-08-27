@@ -7,11 +7,12 @@ import pandas as pd
 from demo_coach.parsing import ParsedDemo, parse_demo
 
 CACHE_DIR = Path(os.environ.get("DEMO_COACH_CACHE_DIR", "cache"))
+CACHE_VERSION = 2  # bump when parsed frame schemas change (v2: death positions)
 _FRAMES = ["deaths", "hurts", "rounds", "economy"]
 
 
 def save(parsed: ParsedDemo) -> None:
-    d = CACHE_DIR / parsed.demo_id
+    d = CACHE_DIR / f"v{CACHE_VERSION}" / parsed.demo_id
     d.mkdir(parents=True, exist_ok=True)
     (d / "header.json").write_text(json.dumps(parsed.header), encoding="utf-8")
     for name in _FRAMES:
@@ -19,7 +20,7 @@ def save(parsed: ParsedDemo) -> None:
 
 
 def load(demo_id: str) -> ParsedDemo | None:
-    d = CACHE_DIR / demo_id
+    d = CACHE_DIR / f"v{CACHE_VERSION}" / demo_id
     if not (d / "header.json").exists():
         return None
     return ParsedDemo(
