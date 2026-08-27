@@ -19,6 +19,8 @@ class ParsedDemo:
     rounds: pd.DataFrame    # round_end events
     economy: pd.DataFrame   # balance/equip_value snapshot at each round_freeze_end
     positions: pd.DataFrame = field(default_factory=pd.DataFrame)  # sampled player positions (every SAMPLE_EVERY ticks)
+    fires: pd.DataFrame = field(default_factory=pd.DataFrame)   # weapon_fire events (shooter X/Y + weapon)
+    bombs: pd.DataFrame = field(default_factory=pd.DataFrame)   # bomb_* events with an "event" column
 
 
 def file_hash(path: str) -> str:
@@ -59,7 +61,7 @@ def parse_demo(path: str) -> ParsedDemo:
     deaths = _add_round_index(
         parser.parse_event("player_death", player=["X", "Y"]), rounds
     )
-    hurts = parser.parse_event("player_hurt")
+    hurts = parser.parse_event("player_hurt", player=["X", "Y"])
     freeze_ends = parser.parse_event("round_freeze_end")
     _check_round_alignment(len(rounds), len(freeze_ends))
     if len(freeze_ends) > 0:
@@ -74,13 +76,32 @@ def parse_demo(path: str) -> ParsedDemo:
     if len(rounds) > 0:
         last_tick = int(rounds["tick"].max()) + TICK_RATE * 5
         positions = parser.parse_ticks(
-            ["X", "Y", "team_num", "active_weapon_name", "inventory"],
+            ["X", "Y", "team_num", "active_weapon_name", "inventory", "yaw"],
             ticks=list(range(0, last_tick, SAMPLE_EVERY)),
         )
     else:
         positions = pd.DataFrame(columns=["tick", "name", "team_num", "X", "Y"])
+    fires = parser.parse_event("weapon_fire", player=["X", "Y"])
+    bombs = _bomb_events(parser)
     return ParsedDemo(
         demo_id=file_hash(path), header=header,
         deaths=deaths, hurts=hurts, rounds=rounds, economy=economy,
-        positions=positions,
+        positions=positions, fires=fires, bombs=bombs,
     )
+
+
+_BOMB_EVENTS = ["bomb_dropped", "bomb_pickup", "bomb_planted",
+                "bomb_defused", "bomb_exploded"]
+
+
+def _bomb_events(parser: DemoParser) -> pd.DataFrame:
+    """All bomb_* events in one frame: tick, event, user_name, site."""
+    frames = []
+    for ev in _BOMB_EVENTS:
+        df = parser.parse_event(ev)
+        if len(df) > 0:
+            keep = [c for c in ["tick", "user_name", "site"] if c in df.columns]
+            frames.append(df[keep].assign(event=ev))
+    if not frames:
+        return pd.DataFrame(columns=["tick", "event", "user_name", "site"])
+    return pd.concat(frames, ignore_index=True).sort_values("tick").reset_index(drop=True)

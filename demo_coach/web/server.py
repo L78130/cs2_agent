@@ -142,6 +142,62 @@ def round_replay(demo_id: str, n: int):
 
     pos = parsed.positions
     pos = pos[(pos["tick"] >= start) & (pos["tick"] <= end)]
+
+    def _player_xy_at(name, tick):
+        """Nearest sampled position/yaw of a player at or before a tick."""
+        g = pos[(pos["name"] == name) & (pos["tick"] <= tick)]
+        if g.empty:
+            return None
+        r = g.sort_values("tick").iloc[-1]
+        return (round(float(r["X"]), 1), round(float(r["Y"]), 1),
+                round(float(r["yaw"]), 1) if "yaw" in g.columns and pd.notna(r["yaw"]) else 0.0)
+
+    fires = parsed.fires
+    fire_list = []
+    if not fires.empty:
+        fires = fires[(fires["tick"] >= start) & (fires["tick"] <= end)]
+        for _, f in fires.iterrows():
+            xy = _player_xy_at(f["user_name"], int(f["tick"]))
+            fire_list.append({
+                "tick": int(f["tick"]),
+                "name": f["user_name"],
+                "x": round(float(f["user_X"]), 1) if pd.notna(f["user_X"]) else (xy[0] if xy else None),
+                "y": round(float(f["user_Y"]), 1) if pd.notna(f["user_Y"]) else (xy[1] if xy else None),
+                "yaw": xy[2] if xy else 0.0,
+            })
+
+    bombs = parsed.bombs
+    bomb_list = []
+    if not bombs.empty:
+        bombs = bombs[(bombs["tick"] >= start) & (bombs["tick"] <= end)]
+        for _, b in bombs.iterrows():
+            xy = _player_xy_at(b["user_name"], int(b["tick"])) if pd.notna(b["user_name"]) else None
+            bomb_list.append({
+                "tick": int(b["tick"]),
+                "event": b["event"],
+                "site": b["site"] if "site" in bombs.columns and pd.notna(b["site"]) else None,
+                "x": xy[0] if xy else None,
+                "y": xy[1] if xy else None,
+            })
+
+    hurts = parsed.hurts
+    damage_list = []
+    if not hurts.empty and "user_X" in hurts.columns:
+        hurts = hurts[(hurts["tick"] >= start) & (hurts["tick"] <= end)]
+        for _, h in hurts.iterrows():
+            if pd.isna(h.get("user_X")) or pd.isna(h.get("attacker_X")):
+                continue
+            damage_list.append({
+                "tick": int(h["tick"]),
+                "attacker": h["attacker_name"],
+                "victim": h["user_name"],
+                "dmg": int(h["dmg_health"]) if pd.notna(h.get("dmg_health")) else 0,
+                "attacker_x": float(h["attacker_X"]),
+                "attacker_y": float(h["attacker_Y"]),
+                "victim_x": float(h["user_X"]),
+                "victim_y": float(h["user_Y"]),
+            })
+
     players = []
     for name, g in pos.groupby("name"):
         g = g.sort_values("tick")
@@ -151,8 +207,9 @@ def round_replay(demo_id: str, n: int):
         last_inv = None
         for _, r in g.iterrows():
             weapon = short_weapon(r["active_weapon_name"]) if has_gear else ""
+            yaw = round(float(r["yaw"]), 1) if "yaw" in g.columns and pd.notna(r["yaw"]) else 0.0
             frames.append([int(r["tick"]), round(float(r["X"]), 1),
-                           round(float(r["Y"]), 1), weapon])
+                           round(float(r["Y"]), 1), weapon, yaw])
             if "inventory" in g.columns:
                 raw = r["inventory"]
                 items = [] if raw is None or (not hasattr(raw, "__len__") and pd.isna(raw)) \
@@ -172,6 +229,9 @@ def round_replay(demo_id: str, n: int):
         "image": f"/static/maps/{map_name}.png",
         "start": start, "end": end,
         "players": players,
+        "fires": fire_list,
+        "bombs": bomb_list,
+        "damages": damage_list,
         "kills": [
             {"tick": int(k["tick"]), "attacker": k["attacker_name"],
              "victim": k["user_name"], "weapon": k["weapon"],
