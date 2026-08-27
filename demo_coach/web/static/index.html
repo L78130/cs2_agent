@@ -127,6 +127,9 @@
   .gear-card.dead { opacity: .35; }
   .gear-card.t { border-top: 2px solid var(--t); }
   .gear-card.ct { border-top: 2px solid var(--ct); }
+  .wicon { height: 13px; vertical-align: -2px; }
+  .gear-card .gweapon .wicon { height: 17px; }
+  .gear-card .ginv .wicon { height: 11px; opacity: .7; margin-right: 2px; }
 </style>
 </head>
 <body>
@@ -288,6 +291,42 @@ function renderRounds(n) {
 const TEAM_COLOR = { 2: "#e8b23a", 3: "#4aa3ff" };
 let radarImg = new Image(), radarImgReady = false;
 
+// short weapon name -> Valve SVG slug under /static/icons/
+// (icons extracted from CS2, via github.com/Juknum/counter-strike-icons)
+const WEAPON_ICON = {
+  "AK-47": "ak47", "AUG": "aug", "AWP": "awp", "PP-Bizon": "bizon",
+  "C4": "c4", "CZ75-Auto": "cz75a", "Desert Eagle": "deagle",
+  "Decoy": "decoy", "Kit": "defuser", "Dual Berettas": "elite",
+  "FAMAS": "famas", "Five-SeveN": "fiveseven", "Flash": "flashbang",
+  "G3SG1": "g3sg1", "Galil AR": "galilar", "Glock-18": "glock",
+  "HE": "hegrenade", "P2000": "p2000", "Incendiary": "incgrenade",
+  "Knife": "knife", "M249": "m249", "M4A4": "m4a1",
+  "M4A1-S": "m4a1_silencer", "MAC-10": "mac10", "MAG-7": "mag7",
+  "Molotov": "molotov", "MP5-SD": "mp5sd", "MP7": "mp7", "MP9": "mp9",
+  "Negev": "negev", "Nova": "nova", "P250": "p250", "P90": "p90",
+  "R8 Revolver": "revolver", "Sawed-Off": "sawedoff", "SCAR-20": "scar20",
+  "SG 553": "sg556", "Smoke": "smokegrenade", "SSG 08": "ssg08",
+  "Zeus x27": "taser", "Tec-9": "tec9", "UMP-45": "ump45",
+  "USP-S": "usp_silencer", "XM1014": "xm1014",
+};
+const iconCache = {};
+function iconImg(slug) {
+  let img = iconCache[slug];
+  if (!img) {
+    img = new Image();
+    img.onload = () => render();
+    img.src = `/static/icons/${slug}.svg`;
+    iconCache[slug] = img;
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
+function iconTag(w) {
+  const slug = WEAPON_ICON[w];
+  return slug
+    ? `<img class="wicon" src="/static/icons/${slug}.svg" title="${w}" alt="${w}">`
+    : `<span>${w}</span>`;
+}
+
 function loadRadarImage(src) {
   radarImgReady = false;
   radarImg = new Image();
@@ -311,11 +350,14 @@ function drawKillMark(ctx, x, y, headshot) {
   ctx.stroke();
 }
 function drawTag(ctx, x, y, line1, line2, color) {
-  // permanent name + weapon tag above a player marker
+  // permanent name + weapon tag above a player marker;
+  // line2 (weapon) is drawn as an SVG icon when one is loaded, text fallback
+  const img = line2 && WEAPON_ICON[line2] ? iconImg(WEAPON_ICON[line2]) : null;
   ctx.font = "bold 12px system-ui";
   const w1 = ctx.measureText(line1).width;
-  ctx.font = "10px system-ui";
-  const w2 = line2 ? ctx.measureText(line2).width : 0;
+  let w2 = 0;
+  if (img) w2 = img.naturalWidth / img.naturalHeight * 10;
+  else if (line2) { ctx.font = "10px system-ui"; w2 = ctx.measureText(line2).width; }
   const w = Math.max(w1, w2) + 10, h = line2 ? 30 : 17;
   const bx = Math.min(Math.max(x - w / 2, 2), 1024 - w - 2);
   const by = Math.max(y - h - 10, 2);
@@ -324,7 +366,9 @@ function drawTag(ctx, x, y, line1, line2, color) {
   ctx.fillStyle = color;
   ctx.font = "bold 12px system-ui";
   ctx.fillText(line1, bx + 5, by + 13);
-  if (line2) {
+  if (img) {
+    ctx.drawImage(img, bx + 5, by + 17, w2, 10);
+  } else if (line2) {
     ctx.fillStyle = "#c9d1d9"; ctx.font = "10px system-ui";
     ctx.fillText(line2, bx + 5, by + 26);
   }
@@ -472,8 +516,8 @@ function renderGearStrip() {
   $("gear-strip").innerHTML = cards.map(({ p, dead, weapon, inv }) =>
     `<div class="gear-card ${p.team === 2 ? "t" : "ct"}${dead ? " dead" : ""}">
       <div class="gname" style="color:${TEAM_COLOR[p.team] || "#ccc"}">${p.name}</div>
-      <div class="gweapon">${weapon}</div>
-      <div class="ginv">${inv.join(" · ")}</div>
+      <div class="gweapon">${weapon ? iconTag(weapon) : ""}</div>
+      <div class="ginv">${inv.map(iconTag).join(" ")}</div>
     </div>`).join("");
 }
 

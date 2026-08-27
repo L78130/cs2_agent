@@ -41,3 +41,33 @@ def test_short_weapon_grenades_and_guns():
     assert radar.short_weapon("AK-47") == "AK-47"  # guns pass through
     assert radar.short_weapon(None) == ""
     assert radar.short_weapon(float("nan")) == ""  # missing weapon prop
+
+
+def _ui_weapon_icon_map():
+    import re
+    html = (radar.MAPS_DIR.parent / "index.html").read_text(encoding="utf-8")
+    block = re.search(r"WEAPON_ICON = \{(.*?)\};", html, re.S).group(1)
+    keys = set(re.findall(r'"([^"]+)":', block))
+    slugs = re.findall(r':\s*"([a-z0-9_]+)"', block)
+    return keys, slugs
+
+
+def test_all_ui_weapon_icons_exist_on_disk():
+    _, slugs = _ui_weapon_icon_map()
+    icons = radar.MAPS_DIR.parent / "icons"
+    assert len(slugs) >= 40
+    for slug in slugs:
+        assert (icons / f"{slug}.svg").exists(), slug
+
+
+def test_short_weapon_outputs_have_ui_icons():
+    keys, _ = _ui_weapon_icon_map()
+    # every weapon name observed in the real test demo
+    names = ["AK-47", "AWP", "C4 Explosive", "Desert Eagle", "Dual Berettas",
+             "FAMAS", "Five-SeveN", "Flashbang", "Galil AR", "Glock-18",
+             "High Explosive Grenade", "Huntsman Knife", "Incendiary Grenade",
+             "M4A1-S", "M4A4", "MAC-10", "MP7", "MP9", "Molotov", "Negev",
+             "P250", "Paracord Knife", "SSG 08", "Smoke Grenade", "Tec-9",
+             "USP-S", "XM1014", "knife", "knife_t"]
+    for name in names:
+        assert radar.short_weapon(name) in keys, name
