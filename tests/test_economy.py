@@ -36,3 +36,17 @@ def test_round_log():
     assert log.iloc[0].reason_text == "ts_win"
     assert log.iloc[1].ct_buy == "full"
     assert log.iloc[1].t_buy == "eco"
+
+
+def test_round_log_string_reasons():
+    # real CS2 demos report reason/winner as strings: "ct_killed" means the
+    # CTs were eliminated, so the winner is T (and vice versa)
+    rounds = pd.DataFrame([
+        [400, 2, "ct_killed"],   # Ts win by eliminating the CTs
+        [900, 3, "t_killed"],    # CTs win by eliminating the Ts
+    ], columns=["tick", "winner", "reason"])
+    log = economy.round_log(rounds, economy.classify_buys(_econ()))
+    assert log.iloc[0].winner_side == "T"
+    assert log.iloc[0].reason_text == "ts_win"
+    assert log.iloc[1].winner_side == "CT"
+    assert log.iloc[1].reason_text == "cts_win"

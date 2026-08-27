@@ -6,7 +6,7 @@ REASONS = {1: "target_bombed", 7: "bomb_defused", 8: "ts_win",
            9: "cts_win", 12: "target_saved",
            # real CS2 demos report reason as a string, not an int code
            "bomb_exploded": "target_bombed", "bomb_defused": "bomb_defused",
-           "t_killed": "ts_win", "ct_killed": "cts_win",
+           "t_killed": "cts_win", "ct_killed": "ts_win",
            "time_ran_out": "target_saved"}
 SIDE = {2: "T", 3: "CT"}
 
