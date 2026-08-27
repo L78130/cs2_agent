@@ -4,13 +4,14 @@ import os
 import shutil
 from pathlib import Path
 
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from demo_coach.agent import CoachAgent
-from demo_coach.radar import load_calibration
+from demo_coach.radar import load_calibration, short_weapon
 from demo_coach.tools import MatchContext, build_context, dispatch
 
 DEMOS_DIR = Path(os.environ.get("DEMO_COACH_DEMO_DIR", "demos"))
@@ -143,13 +144,28 @@ def round_replay(demo_id: str, n: int):
     pos = pos[(pos["tick"] >= start) & (pos["tick"] <= end)]
     players = []
     for name, g in pos.groupby("name"):
-        frames = [[int(r["tick"]), round(float(r["X"]), 1), round(float(r["Y"]), 1)]
-                  for _, r in g.sort_values("tick").iterrows()]
+        g = g.sort_values("tick")
+        has_gear = "active_weapon_name" in g.columns
+        frames = []
+        gear_changes: list[list] = []
+        last_inv = None
+        for _, r in g.iterrows():
+            weapon = short_weapon(r["active_weapon_name"]) if has_gear else ""
+            frames.append([int(r["tick"]), round(float(r["X"]), 1),
+                           round(float(r["Y"]), 1), weapon])
+            if "inventory" in g.columns:
+                raw = r["inventory"]
+                items = [] if raw is None or (not hasattr(raw, "__len__") and pd.isna(raw)) \
+                    else sorted(short_weapon(w) for w in raw)
+                if items != last_inv:
+                    gear_changes.append([int(r["tick"]), items])
+                    last_inv = items
         players.append({
             "name": name,
             "team": int(g["team_num"].iloc[0]) if "team_num" in g else 0,
             "death_tick": death_tick.get(name),
             "frames": frames,
+            "gear_changes": gear_changes,
         })
     return {
         "map": map_name, "calibration": cal,

@@ -23,10 +23,13 @@ def ctx():
             [[100, "atk", 2, 4000, 4000], [100, "vic", 3, 5000, 5000]],
             columns=["tick", "name", "team_num", "balance", "current_equip_value"]),
         positions=pd.DataFrame(
-            [[104, "atk", 2, 1.0, 2.0], [112, "atk", 2, 3.0, 4.0],
-             [104, "vic", 3, 5.0, 6.0], [296, "atk", 2, 7.0, 8.0],
-             [400, "atk", 2, 9.0, 9.0]],  # tick 400 is past round end -> excluded
-            columns=["tick", "name", "team_num", "X", "Y"]),
+            [[104, "atk", 2, 1.0, 2.0, "Huntsman Knife", ["Huntsman Knife", "Glock-18"]],
+             [112, "atk", 2, 3.0, 4.0, "Glock-18", ["Huntsman Knife", "Glock-18"]],
+             [104, "vic", 3, 5.0, 6.0, "USP-S", ["Knife", "USP-S"]],
+             [296, "atk", 2, 7.0, 8.0, "AK-47", ["AK-47", "Huntsman Knife", "Glock-18"]],
+             [400, "atk", 2, 9.0, 9.0, "AK-47", ["AK-47", "Huntsman Knife", "Glock-18"]]],  # tick 400 is past round end -> excluded
+            columns=["tick", "name", "team_num", "X", "Y",
+                     "active_weapon_name", "inventory"]),
     )
     return MatchContext(parsed, pd.DataFrame(), pd.DataFrame(), [], {})
 
@@ -48,9 +51,14 @@ def test_replay_frames():
     players = {p["name"]: p for p in j["players"]}
     assert players["atk"]["team"] == 2
     assert players["vic"]["team"] == 3
-    # frames within [start, end] only
-    assert players["atk"]["frames"] == [[104, 1.0, 2.0], [112, 3.0, 4.0], [296, 7.0, 8.0]]
-    assert players["vic"]["frames"] == [[104, 5.0, 6.0]]
+    # frames within [start, end] only, with normalized weapon per frame
+    assert players["atk"]["frames"] == [
+        [104, 1.0, 2.0, "Knife"], [112, 3.0, 4.0, "Glock-18"], [296, 7.0, 8.0, "AK-47"]]
+    assert players["vic"]["frames"] == [[104, 5.0, 6.0, "USP-S"]]
+    # gear changes: compressed, normalized (skin names -> types)
+    assert players["atk"]["gear_changes"] == [
+        [104, ["Glock-18", "Knife"]], [296, ["AK-47", "Glock-18", "Knife"]]]
+    assert players["vic"]["gear_changes"] == [[104, ["Knife", "USP-S"]]]
     # vic died at tick 150 -> death_tick exposed so frontend can fade the dot
     assert players["vic"]["death_tick"] == 150
     assert players["atk"]["death_tick"] is None

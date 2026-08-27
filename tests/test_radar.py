@@ -26,3 +26,18 @@ def test_y_axis_flips():
 def test_load_calibration():
     assert radar.load_calibration("de_ancient")["scale"] == 5
     assert radar.load_calibration("de_nonexistent") is None
+
+
+def test_short_weapon_strips_knife_skins():
+    assert radar.short_weapon("Huntsman Knife") == "Knife"
+    assert radar.short_weapon("Karambit") == "Knife"
+    assert radar.short_weapon("knife") == "Knife"
+
+
+def test_short_weapon_grenades_and_guns():
+    assert radar.short_weapon("High Explosive Grenade") == "HE"
+    assert radar.short_weapon("Smoke Grenade") == "Smoke"
+    assert radar.short_weapon("C4 Explosive") == "C4"
+    assert radar.short_weapon("AK-47") == "AK-47"  # guns pass through
+    assert radar.short_weapon(None) == ""
+    assert radar.short_weapon(float("nan")) == ""  # missing weapon prop

@@ -74,7 +74,7 @@ def parse_demo(path: str) -> ParsedDemo:
     if len(rounds) > 0:
         last_tick = int(rounds["tick"].max()) + TICK_RATE * 5
         positions = parser.parse_ticks(
-            ["X", "Y", "team_num"],
+            ["X", "Y", "team_num", "active_weapon_name", "inventory"],
             ticks=list(range(0, last_tick, SAMPLE_EVERY)),
         )
     else:
