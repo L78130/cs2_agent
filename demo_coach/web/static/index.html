@@ -1,0 +1,63 @@
+<!-- demo_coach/web/static/index.html -->
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>demo_coach</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+  #chat { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; min-height: 300px; margin: 1rem 0; }
+  .msg { margin: .5rem 0; white-space: pre-wrap; }
+  .user { color: #06c; }
+  .bot { color: #222; }
+  input[type=text] { width: 75%; padding: .5rem; }
+  button { padding: .5rem 1rem; }
+</style>
+</head>
+<body>
+<h1>demo_coach</h1>
+<input type="file" id="file" accept=".dem">
+<button onclick="upload()">Upload &amp; analyze</button>
+<span id="status"></span>
+<div id="chat"></div>
+<input type="text" id="q" placeholder="Ask about the match..." onkeydown="if(event.key==='Enter')send()">
+<button onclick="send()">Send</button>
+<script>
+let demoId = null, history = [];
+const chat = document.getElementById("chat");
+function add(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  d.textContent = (role === "user" ? "You: " : "Coach: ") + text;
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+}
+async function upload() {
+  const f = document.getElementById("file").files[0];
+  if (!f) return;
+  document.getElementById("status").textContent = "parsing...";
+  const fd = new FormData(); fd.append("file", f);
+  const r = await fetch("/api/upload", { method: "POST", body: fd });
+  const j = await r.json();
+  if (!r.ok) { document.getElementById("status").textContent = j.detail; return; }
+  demoId = j.demo_id; history = [];
+  chat.innerHTML = "";
+  document.getElementById("status").textContent =
+    `loaded ${j.map}, ${j.rounds_played} rounds`;
+}
+async function send() {
+  const q = document.getElementById("q");
+  if (!demoId || !q.value.trim()) return;
+  add("user", q.value);
+  const r = await fetch(`/api/matches/${demoId}/chat`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ message: q.value, history }),
+  });
+  const j = await r.json();
+  if (r.ok) { add("bot", j.reply);
+    history.push({role: "user", content: q.value}, {role: "assistant", content: j.reply});
+  } else { add("bot", "Error: " + (j.detail || r.status)); }
+  q.value = "";
+}
+</script>
+</body>
+</html>
