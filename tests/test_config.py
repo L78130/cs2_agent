@@ -1,15 +1,15 @@
 # tests/test_config.py
-import os
 from demo_coach.config import get_settings
 
 
 def test_defaults(monkeypatch):
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.delenv("KIMI_MODEL", raising=False)
+    monkeypatch.delenv("KIMI_BASE_URL", raising=False)
     s = get_settings()
     assert s.api_key is None
-    assert s.base_url == "https://api.moonshot.cn/v1"
-    assert s.model == "kimi-k2-0711-preview"
+    assert s.base_url == "https://api.kimi.com/coding/v1"
+    assert s.model == "k3-256k"
 
 
 def test_env_override(monkeypatch):

@@ -2,8 +2,8 @@
 import os
 from dataclasses import dataclass
 
-DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
-DEFAULT_MODEL = "kimi-k2-0711-preview"
+DEFAULT_BASE_URL = "https://api.kimi.com/coding/v1"
+DEFAULT_MODEL = "k3-256k"
 
 
 @dataclass(frozen=True)

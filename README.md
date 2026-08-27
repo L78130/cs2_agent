@@ -27,18 +27,21 @@ export MOONSHOT_API_KEY=sk-...
 $env:MOONSHOT_API_KEY="sk-..."
 ```
 
-Both Moonshot platform keys (`sk-...`, default base URL) and kimi.com
-coding-plan keys (`sk-kimi-...`) work. For `sk-kimi-` keys you must also set
-the coding endpoint:
+Both kimi.com coding-plan keys (`sk-kimi-...`) and Moonshot platform keys
+(`sk-...`) work. The defaults target the kimi.com coding endpoint
+(`https://api.kimi.com/coding/v1`, model `k3-256k`). For a Moonshot platform
+key, override both:
 
 ```powershell
-$env:KIMI_BASE_URL="https://api.kimi.com/coding/v1"
+$env:KIMI_BASE_URL="https://api.moonshot.cn/v1"
+$env:KIMI_MODEL="kimi-k2-0711-preview"
 ```
 
 Optional environment variables:
 
-- `KIMI_MODEL` — chat model (default `kimi-k2-0711-preview`)
-- `KIMI_BASE_URL` — API base URL (default `https://api.moonshot.cn/v1`)
+- `KIMI_MODEL` — chat model (default `k3-256k`; the coding endpoint also
+  offers `k3`, `kimi-for-coding`, `kimi-for-coding-highspeed`)
+- `KIMI_BASE_URL` — API base URL (default `https://api.kimi.com/coding/v1`)
 - `DEMO_COACH_CACHE_DIR` — where parsed demos are cached as parquet
   (default `cache/`, keyed by file hash)
 - `DEMO_COACH_DEMO_DIR` — where the web UI stores uploaded demos
