@@ -20,6 +20,7 @@
 - Team numbers: 2 = T, 3 = CT (Source engine convention).
 - v1 assumption: 5v5 matches. Roster = union of player names appearing in deaths/hurts events (players with zero involvement may be absent — acceptable for v1).
 - `.gitignore` already excludes `.venv/`, `demos/`, `cache/`.
+- Storage locations are configurable: `storage.CACHE_DIR` reads env var `DEMO_COACH_CACHE_DIR` (default `"cache"`), and the web server's demo directory reads `DEMO_COACH_DEMO_DIR` (default `"demos"`). The user's demos live in `F:\gaming\cs2_demo`; if D: runs low on space, point both env vars there.
 - New dependencies to install in Task 1: `fastapi uvicorn openai python-multipart pytest`.
 
 ## File Structure
@@ -244,13 +245,14 @@ def parse_demo(path: str) -> ParsedDemo:
 ```python
 # demo_coach/storage.py
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 
 from demo_coach.parsing import ParsedDemo, parse_demo
 
-CACHE_DIR = Path("cache")
+CACHE_DIR = Path(os.environ.get("DEMO_COACH_CACHE_DIR", "cache"))
 _FRAMES = ["deaths", "hurts", "rounds", "economy"]
 
 
@@ -1267,6 +1269,7 @@ Expected: FAIL — `ModuleNotFoundError`
 
 ```python
 # demo_coach/web/server.py
+import os
 import shutil
 from pathlib import Path
 
@@ -1277,7 +1280,7 @@ from pydantic import BaseModel
 from demo_coach.agent import CoachAgent
 from demo_coach.tools import MatchContext, build_context
 
-DEMOS_DIR = Path("demos")
+DEMOS_DIR = Path(os.environ.get("DEMO_COACH_DEMO_DIR", "demos"))
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI(title="demo_coach")
