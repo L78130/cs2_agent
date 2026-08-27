@@ -71,7 +71,11 @@ def main() -> None:
             break
         if q in ("quit", "exit", ""):
             break
-        reply = agent.chat(q, history)
+        try:
+            reply = agent.chat(q, history)
+        except Exception as e:
+            print(f"Error: LLM API call failed: {e}")
+            continue
         history += [{"role": "user", "content": q},
                     {"role": "assistant", "content": reply}]
         print(reply)

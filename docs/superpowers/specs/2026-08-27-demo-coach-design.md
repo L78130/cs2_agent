@@ -25,7 +25,7 @@ Python package `demo_coach` in the repo root (`D:\gaming\demo_agent`), running i
 ```
 demo_coach/
 ├── parsing.py      # demoparser2 wrappers: .dem → normalized DataFrames (events, ticks)
-├── stats.py        # per-player: K/D/A, ADR, KAST, HS%, first kills, utility dmg, flash stats
+├── stats.py        # per-player: K/D/A, ADR, KAST, HS%, first kills; utility dmg, flash stats (deferred to a later phase)
 ├── economy.py      # per-round: buy type (eco/force/full), equipment value, round outcome+reason
 ├── highlights.py   # rule-based: 3k/4k/ace, 1vX clutches, knife kills
 ├── summary.py      # compact match-summary JSON (a few KB) seeded into Kimi's context
@@ -82,6 +82,7 @@ demo_coach/
 
 - Phase 2: Steam match share-code demo download (share-code decode is documented and feasible).
 - Phase 3: 5E / Perfect World platform demo downloads — requires a feasibility spike first; no public APIs, demos are behind login and platform-controlled. Manual `.dem` export from those platforms remains the fallback.
+- Weapon stats, utility damage and flash stats beyond what scoreboard provides — deferred.
 
 ## Reference Projects
 

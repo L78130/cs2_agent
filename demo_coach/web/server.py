@@ -42,6 +42,7 @@ def upload(file: UploadFile = File(...)):
         dest.unlink(missing_ok=True)
         raise HTTPException(422, f"failed to parse demo: {e}")
     CONTEXTS[ctx.parsed.demo_id] = ctx
+    AGENTS.pop(ctx.parsed.demo_id, None)  # re-upload gets a fresh agent
     return {"demo_id": ctx.parsed.demo_id, "map": ctx.summary["map"],
             "rounds_played": ctx.summary["rounds_played"]}
 
@@ -63,4 +64,8 @@ def chat(demo_id: str, req: ChatRequest):
             AGENTS[demo_id] = CoachAgent(ctx)
         except RuntimeError as e:
             raise HTTPException(503, str(e))
-    return {"reply": AGENTS[demo_id].chat(req.message, req.history)}
+    try:
+        reply = AGENTS[demo_id].chat(req.message, req.history)
+    except Exception as e:
+        raise HTTPException(502, f"LLM API error: {e}")
+    return {"reply": reply}

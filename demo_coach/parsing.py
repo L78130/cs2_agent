@@ -1,4 +1,5 @@
 import hashlib
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -38,6 +39,17 @@ def _add_round_index(deaths: pd.DataFrame, rounds: pd.DataFrame) -> pd.DataFrame
     return deaths.assign(total_rounds_played=idx)
 
 
+def _check_round_alignment(n_rounds: int, n_freeze_ends: int) -> None:
+    """Death round indices derive from round_end ticks while economy round
+    indices derive from freeze_end tick order; warn if the counts disagree."""
+    if n_rounds != n_freeze_ends:
+        warnings.warn(
+            f"round count mismatch: {n_rounds} round_end events vs "
+            f"{n_freeze_ends} round_freeze_end events; death and economy "
+            "round indices may be misaligned"
+        )
+
+
 def parse_demo(path: str) -> ParsedDemo:
     parser = DemoParser(path)
     header = dict(parser.parse_header())
@@ -45,6 +57,7 @@ def parse_demo(path: str) -> ParsedDemo:
     deaths = _add_round_index(parser.parse_event("player_death"), rounds)
     hurts = parser.parse_event("player_hurt")
     freeze_ends = parser.parse_event("round_freeze_end")
+    _check_round_alignment(len(rounds), len(freeze_ends))
     if len(freeze_ends) > 0:
         economy = parser.parse_ticks(
             ["balance", "current_equip_value", "team_num"],

@@ -21,3 +21,23 @@ def test_upload_rejects_non_dem():
     c = TestClient(server.app)
     r = c.post("/api/upload", files={"file": ("x.txt", io.BytesIO(b"hi"), "text/plain")})
     assert r.status_code == 400
+
+
+class _FailingAgent:
+    def chat(self, message, history):
+        raise RuntimeError("boom")
+
+
+def test_chat_llm_failure_returns_502():
+    server.CONTEXTS.clear()
+    server.AGENTS.clear()
+    server.CONTEXTS["demo-x"] = object()  # dummy ctx; endpoint only checks presence
+    server.AGENTS["demo-x"] = _FailingAgent()
+    try:
+        c = TestClient(server.app)
+        r = c.post("/api/matches/demo-x/chat", json={"message": "hi", "history": []})
+        assert r.status_code == 502
+        assert "LLM API error" in r.json()["detail"]
+    finally:
+        server.CONTEXTS.clear()
+        server.AGENTS.clear()
