@@ -18,7 +18,21 @@ virtualenv — always invoke Python through it:
 Set your Moonshot API key (required for the chat features, not for parsing):
 
 ```bash
+# bash / Git Bash
 export MOONSHOT_API_KEY=sk-...
+```
+
+```powershell
+# PowerShell
+$env:MOONSHOT_API_KEY="sk-..."
+```
+
+Both Moonshot platform keys (`sk-...`, default base URL) and kimi.com
+coding-plan keys (`sk-kimi-...`) work. For `sk-kimi-` keys you must also set
+the coding endpoint:
+
+```powershell
+$env:KIMI_BASE_URL="https://api.kimi.com/coding/v1"
 ```
 
 Optional environment variables:
