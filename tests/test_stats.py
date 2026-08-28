@@ -45,3 +45,30 @@ def test_first_kills():
     sb = stats.scoreboard(_deaths(), _hurts(), n_rounds=2, tick_rate=64)
     assert sb[sb.name == "bob"].iloc[0].first_kills == 1
     assert sb[sb.name == "alice"].iloc[0].first_kills == 1
+
+
+def test_utility_stats():
+    deaths = _deaths()
+    deaths["assistedflash"] = [False, True, False]  # carol's assist was a flash
+    hurts = _hurts()
+    hurts["weapon"] = ["ak47", "hegrenade", "awp"]  # bob: 40 of his 120 was HE
+    fires = pd.DataFrame(
+        [["bob", "flashbang"], ["bob", "hegrenade"], ["bob", "smokegrenade"],
+         ["alice", "ak47"]],
+        columns=["user_name", "weapon"])
+    u = stats.utility_stats(deaths, hurts, fires, n_rounds=2)
+    assert u["bob"]["util_dmg"] == 40 and u["bob"]["util_dmg_r"] == 20.0
+    assert u["bob"]["flashes_thrown"] == 1 and u["bob"]["nades_thrown"] == 3
+    assert u["carol"]["flash_assists"] == 1
+    assert u["alice"]["util_dmg"] == 0 and u["alice"]["nades_thrown"] == 0
+    # scoreboard merges the same fields
+    sb = stats.scoreboard(deaths, hurts, n_rounds=2, tick_rate=64, fires=fires)
+    bob = sb[sb.name == "bob"].iloc[0]
+    assert bob.util_dmg_r == 20.0 and bob.nades_thrown == 3
+
+
+def test_utility_stats_missing_columns():
+    # hurts without a weapon column, no fires -> all zeros, no crash
+    u = stats.utility_stats(_deaths(), _hurts(), None, n_rounds=2)
+    assert u["bob"]["util_dmg"] == 0 and u["bob"]["flash_assists"] == 0
+    assert u["bob"]["flashes_thrown"] == 0 and u["bob"]["nades_thrown"] == 0

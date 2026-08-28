@@ -1,5 +1,6 @@
 # tests/test_server.py
 import io
+import json
 from fastapi.testclient import TestClient
 from demo_coach.web import server
 
@@ -41,3 +42,39 @@ def test_chat_llm_failure_returns_502():
     finally:
         server.CONTEXTS.clear()
         server.AGENTS.clear()
+
+
+class _StreamAgent:
+    def chat_stream(self, message, history):
+        yield {"type": "token", "text": "bob "}
+        yield {"type": "tool", "name": "get_scoreboard"}
+        yield {"type": "token", "text": "top-fragged."}
+        yield {"type": "done", "reply": "bob top-fragged."}
+
+
+def test_chat_stream_sse():
+    server.CONTEXTS.clear()
+    server.AGENTS.clear()
+    server.CONTEXTS["demo-s"] = object()
+    server.AGENTS["demo-s"] = _StreamAgent()
+    try:
+        c = TestClient(server.app)
+        r = c.post("/api/matches/demo-s/chat/stream",
+                   json={"message": "hi", "history": []})
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/event-stream")
+        events = [json.loads(line[5:]) for line in r.text.split("\n\n")
+                  if line.strip().startswith("data:")]
+        assert [e["type"] for e in events] == ["token", "tool", "token", "done"]
+        assert events[-1]["reply"] == "bob top-fragged."
+    finally:
+        server.CONTEXTS.clear()
+        server.AGENTS.clear()
+
+
+def test_chat_stream_unknown_demo():
+    server.CONTEXTS.clear()
+    c = TestClient(server.app)
+    r = c.post("/api/matches/nope/chat/stream",
+               json={"message": "hi", "history": []})
+    assert r.status_code == 404

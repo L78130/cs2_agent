@@ -3,8 +3,8 @@
 A CS2 demo-analysis agent. It parses a `.dem` file with
 [demoparser2](https://github.com/LaihoE/demoparser2), computes a scoreboard,
 per-round economy log, and highlight moments, then lets you chat about the
-match with an LLM coach (Moonshot/Kimi API, OpenAI-compatible) that can call
-tools over the parsed data.
+match with a Chinese-speaking LLM coach (Moonshot/Kimi API,
+OpenAI-compatible) that can call tools over the parsed data.
 
 ## Setup
 
@@ -65,6 +65,19 @@ exit.
 ```
 
 Open http://127.0.0.1:8000, upload a `.dem` file, and chat about it.
+Features:
+
+- **2D round replay** — animated top-down playback of any round (player
+  positions, shots, kills, grenades, bomb) with game callout names; the first
+  build of a demo parses all ticks once, afterwards each round loads from a
+  per-round cache. Current round info (winner / end reason / buys) is shown
+  under the replay window.
+- **Player cards** — scoreboard rendered as one column per team; click a card
+  for "Analyze performance" (LLM review of that player) or "Highlight rounds"
+  (marks that player's multi-kill/clutch rounds on the round selector).
+- **Streaming chat** — the coach's answer streams token by token (SSE);
+  token usage per message and cumulative per demo is shown in the top-right
+  corner of the header (locally estimated when the API omits usage, marked 约).
 
 ## Tests
 
@@ -80,10 +93,21 @@ TEST_DEMO="path/to/demo.dem" ./.venv/Scripts/python.exe -m pytest tests/test_int
 
 - `demo_coach/parsing.py` — demoparser2 wrapper; derives per-death round index
 - `demo_coach/storage.py` — parquet cache of parsed demos
-- `demo_coach/stats.py` — scoreboard: K/D/A, ADR, HS%, KAST, first kills
+- `demo_coach/replay.py` — 2D round replay builder (32 Hz frames with rich
+  player props, shots, kills/bomb/grenade events, legacy-circle smoke/inferno
+  tracks), lazily parsed once per demo and cached as per-round gzip JSON;
+  modeled on the replay module of DrEAmSs59/CS2-insight-agent
+- `demo_coach/stats.py` — scoreboard: K/D/A, ADR, HS%, KAST, first kills,
+  utility usage (utility damage/round, flash assists, flashes & grenades
+  thrown from weapon_fire events)
 - `demo_coach/economy.py` — buy classification (eco/force/full) and round log
 - `demo_coach/highlights.py` — aces, 4k/3k, clutches, knife kills
 - `demo_coach/summary.py` — JSON-serializable match summary
 - `demo_coach/tools.py` — match context + tool definitions for the agent
-- `demo_coach/agent.py` — tool-calling chat loop and CLI entry point
-- `demo_coach/web/server.py` — FastAPI web UI (upload + chat)
+- `demo_coach/agent.py` — tool-calling chat loop (streaming + grounding
+  verification pass) and CLI entry point; Chinese system prompt with
+  WHAT/WHY/DO structure, capability limits, callout names, and utility-usage
+  evaluation (benchmarks ~5-10 util dmg/round, cf. Leetify/scope.gg)
+- `demo_coach/web/server.py` — FastAPI backend (upload, tools, SSE chat stream)
+- `demo_coach/web/static/index.html` — single-file vanilla-JS frontend
+  (replay canvas, player cards, chat, token-usage readout)

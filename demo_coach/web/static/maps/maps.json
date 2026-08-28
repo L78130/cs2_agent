@@ -2,41 +2,81 @@
  "de_ancient": {
   "pos_x": -2953,
   "pos_y": 2164,
-  "scale": 5
+  "scale": 5,
+  "content_x": 118,
+  "content_y": 68,
+  "content_width": 764,
+  "content_height": 878,
+  "lower_level_max_units": -1000000.0
  },
  "de_mirage": {
   "pos_x": -3230,
   "pos_y": 1713,
-  "scale": 5
+  "scale": 5,
+  "content_x": 69,
+  "content_y": 86,
+  "content_width": 930,
+  "content_height": 862,
+  "lower_level_max_units": -1000000.0
  },
  "de_inferno": {
   "pos_x": -2087,
   "pos_y": 3870,
-  "scale": 4.9
+  "scale": 4.9,
+  "content_x": 61,
+  "content_y": 45,
+  "content_width": 919,
+  "content_height": 913,
+  "lower_level_max_units": -1000000.0
  },
  "de_nuke": {
   "pos_x": -3453,
   "pos_y": 2887,
-  "scale": 7
+  "scale": 7,
+  "content_x": 54,
+  "content_y": 116,
+  "content_width": 967,
+  "content_height": 841,
+  "lower_level_max_units": -495.0
  },
  "de_dust2": {
   "pos_x": -2476,
   "pos_y": 3239,
-  "scale": 4.4
+  "scale": 4.4,
+  "content_x": 45,
+  "content_y": 5,
+  "content_width": 938,
+  "content_height": 1009,
+  "lower_level_max_units": -1000000.0
  },
  "de_anubis": {
   "pos_x": -2796,
   "pos_y": 3328,
-  "scale": 5.22
+  "scale": 5.22,
+  "content_x": 3,
+  "content_y": 1,
+  "content_width": 1019,
+  "content_height": 1016,
+  "lower_level_max_units": -1000000.0
  },
  "de_train": {
   "pos_x": -2308,
   "pos_y": 2078,
-  "scale": 4.082077
+  "scale": 4.082077,
+  "content_x": 20,
+  "content_y": 60,
+  "content_width": 995,
+  "content_height": 905,
+  "lower_level_max_units": -50.0
  },
  "de_overpass": {
   "pos_x": -4831,
   "pos_y": 1781,
-  "scale": 5.2
+  "scale": 5.2,
+  "content_x": 70,
+  "content_y": 6,
+  "content_width": 899,
+  "content_height": 1018,
+  "lower_level_max_units": -1000000.0
  }
 }

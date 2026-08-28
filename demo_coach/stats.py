@@ -50,10 +50,52 @@ def compute_kast(deaths: pd.DataFrame, n_rounds: int, tick_rate: int = 64) -> di
     return result
 
 
+# weapons whose damage counts as utility damage (internal weapon_fire names)
+UTIL_DMG_WEAPONS = {"hegrenade", "molotov", "inferno", "incgrenade"}
+# thrown-utility weapons (grenades pulled the pin on)
+NADE_WEAPONS = {"flashbang", "smokegrenade", "hegrenade", "molotov",
+                "incgrenade", "decoy"}
+
+
+def utility_stats(deaths: pd.DataFrame, hurts: pd.DataFrame,
+                  fires: pd.DataFrame | None, n_rounds: int) -> dict[str, dict]:
+    """Per-player utility usage: damage dealt by HE/molotov, flash assists,
+    flashes and total grenades thrown. Tolerates missing columns/frames."""
+    players = set(roster(deaths, hurts))
+    if fires is not None and len(fires) and "user_name" in fires:
+        players |= set(fires["user_name"].dropna())
+    out = {p: {"util_dmg": 0, "util_dmg_r": 0.0, "flash_assists": 0,
+               "flashes_thrown": 0, "nades_thrown": 0} for p in sorted(players)}
+
+    if len(hurts) and "weapon" in hurts:
+        uh = hurts[hurts["weapon"].isin(UTIL_DMG_WEAPONS)]
+        dmg = uh.groupby(COL_ATTACKER)["dmg_health"].sum()
+        for p, v in dmg.items():
+            if p in out:
+                out[p]["util_dmg"] = int(v)
+                out[p]["util_dmg_r"] = round(float(v) / n_rounds, 1) if n_rounds else 0.0
+
+    if len(deaths) and "assistedflash" in deaths:
+        fa = deaths[deaths["assistedflash"].fillna(False).astype(bool)]
+        for p in players:
+            out[p]["flash_assists"] = int((fa[COL_ASSISTER] == p).sum()) \
+                if COL_ASSISTER in fa else 0
+
+    if fires is not None and len(fires) and "weapon" in fires:
+        fw = fires["weapon"].str.replace(r"^weapon_", "", regex=True)
+        for p in players:
+            w = fw[fires["user_name"] == p]
+            out[p]["flashes_thrown"] = int((w == "flashbang").sum())
+            out[p]["nades_thrown"] = int(w.isin(NADE_WEAPONS).sum())
+    return out
+
+
 def scoreboard(deaths: pd.DataFrame, hurts: pd.DataFrame,
-               n_rounds: int, tick_rate: int = 64) -> pd.DataFrame:
+               n_rounds: int, tick_rate: int = 64,
+               fires: pd.DataFrame | None = None) -> pd.DataFrame:
     players = roster(deaths, hurts)
     kast = compute_kast(deaths, n_rounds, tick_rate)
+    util = utility_stats(deaths, hurts, fires, n_rounds)
     dmg = hurts.groupby(COL_ATTACKER)["dmg_health"].sum() if len(hurts) else pd.Series(dtype=float)
     first_victims = (deaths.sort_values("tick")
                      .groupby(COL_ROUND).first()[COL_ATTACKER]
@@ -73,5 +115,8 @@ def scoreboard(deaths: pd.DataFrame, hurts: pd.DataFrame,
             "hs_pct": round(100.0 * k["headshot"].sum() / kills, 1) if kills else 0.0,
             "kast": kast.get(p, 0.0),
             "first_kills": int((first_victims == p).sum()),
+            **util.get(p, {"util_dmg": 0, "util_dmg_r": 0.0,
+                           "flash_assists": 0, "flashes_thrown": 0,
+                           "nades_thrown": 0}),
         })
     return pd.DataFrame(rows).sort_values("kills", ascending=False).reset_index(drop=True)
