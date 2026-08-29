@@ -71,14 +71,7 @@ def list_matches(platform: str, creds: dict, limit: int = 20) -> list[dict]:
         from cs_demo_downloader.core.downloader_pwa import get_all_demo_metadata
         metas = get_all_demo_metadata(creds["steamid"], creds["access_token"], size=limit)
     elif platform == "steam":
-        from cs_demo_downloader.core.downloader_steam import get_all_demo_urls
-        urls = get_all_demo_urls(creds["api_key"], creds["steamid"],
-                                 creds["steamidkey"], creds["knowncode"],
-                                 limit=limit, demo_url_resolver=_steam_resolver())
-        return [{"platform": "steam", "match_id": code, "map": "?", "date": "",
-                 "rounds": None, "teams": [], "demo_available": True,
-                 "demo_url": url}
-                for code, url in urls.items()]
+        return _steam_matches(creds, limit)
     else:
         raise ValueError(f"unknown platform: {platform}")
     return [_meta_to_dict(m) for m in metas]
@@ -107,6 +100,60 @@ def _steam_resolver():
                         target = exe_dir / Path(extra).name
                         target.write_bytes(archive.read(extra))
     return BoilerWritterResolver(executable_path=exe).resolve_demo_url
+
+
+def _steam_matches(creds: dict, limit: int) -> list[dict]:
+    """Walk Steam share-code history forward from knowncode, newest first.
+
+    The Web API only steps one match per request from a known code, and each
+    match needs a GC resolve for its replay URL, so listing is slow when
+    knowncode is old. Two mitigations: transient API timeouts are retried
+    instead of ending the walk, and creds["knowncode"] is ratcheted to the
+    newest code seen (in place — callers persisting creds keep the cursor).
+    """
+    from cs_demo_downloader.core.downloader_steam import (
+        get_next_share_code, resolve_demo_url_from_share_code)
+
+    resolver = _steam_resolver()
+    out = []
+    code = creds["knowncode"]
+    seen = {code}
+    for _ in range(limit):
+        nxt = None
+        for _attempt in range(3):
+            nxt = get_next_share_code(creds["api_key"], creds["steamid"],
+                                      creds["steamidkey"], code)
+            if nxt:
+                break
+            time.sleep(2)
+        if not nxt or nxt == "n/a" or nxt in seen:
+            break
+        seen.add(nxt)
+        code = nxt
+        url = resolve_demo_url_from_share_code(nxt, resolver)
+        if url:
+            out.append({"platform": "steam", "match_id": nxt, "map": "?",
+                        "date": "", "rounds": None, "teams": [],
+                        "demo_available": True, "demo_url": url})
+    if code != creds.get("knowncode"):
+        creds["knowncode"] = code
+    out.reverse()
+    # The ratchet means future walks only see NEW matches; keep a small cache
+    # so "list recent matches" still shows recent history after the cursor
+    # has caught up.
+    try:
+        saved = load_credentials()
+        fresh = {m["match_id"] for m in out}
+        merged = (out + [m for m in saved.get("steam_match_cache", [])
+                         if m.get("match_id") not in fresh])[:30]
+        if merged and merged != saved.get("steam_match_cache"):
+            saved["steam_match_cache"] = merged
+            save_credentials(saved)
+        if merged:
+            out = merged
+    except OSError:
+        pass
+    return out
 
 
 def resolve_steam_share_code(share_code: str) -> str:

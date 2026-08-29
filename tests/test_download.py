@@ -64,6 +64,33 @@ def test_list_matches_unknown_platform():
         download.list_matches("hltv", {})
 
 
+def test_list_matches_steam_newest_first_and_ratchets_knowncode(tmp_path, monkeypatch):
+    monkeypatch.setattr(download, "CREDENTIALS_FILE", tmp_path / "cfg.json")
+    mod = ModuleType("cs_demo_downloader.core.downloader_steam")
+    chain = {"CSGO-OLD": "CSGO-MID", "CSGO-MID": "CSGO-NEW", "CSGO-NEW": "n/a"}
+    mod.get_next_share_code = MagicMock(side_effect=lambda *a: chain[a[3]])
+    mod.resolve_demo_url_from_share_code = MagicMock(
+        side_effect=lambda code, resolver: f"http://x/{code}.dem.bz2")
+    creds = {"api_key": "k", "steamid": "s", "steamidkey": "sk",
+             "knowncode": "CSGO-OLD"}
+    with patch.dict(sys.modules,
+                    {"cs_demo_downloader.core.downloader_steam": mod}), \
+         patch.object(download, "_steam_resolver", return_value=object()):
+        out = download.list_matches("steam", creds, limit=10)
+    assert [m["match_id"] for m in out] == ["CSGO-NEW", "CSGO-MID"]
+    assert out[0]["demo_url"] == "http://x/CSGO-NEW.dem.bz2"
+    assert creds["knowncode"] == "CSGO-NEW"  # cursor ratcheted in place
+
+    # once the cursor has caught up, the cached listing is still served
+    mod.get_next_share_code = MagicMock(side_effect=lambda *a: "n/a")
+    creds["knowncode"] = "CSGO-NEW"
+    with patch.dict(sys.modules,
+                    {"cs_demo_downloader.core.downloader_steam": mod}), \
+         patch.object(download, "_steam_resolver", return_value=object()):
+        out2 = download.list_matches("steam", creds, limit=10)
+    assert [m["match_id"] for m in out2] == ["CSGO-NEW", "CSGO-MID"]
+
+
 def test_download_demo_decompresses_bz2(tmp_path):
     payload = bz2.compress(b"fake demo bytes")
     resp = MagicMock()

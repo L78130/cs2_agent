@@ -101,7 +101,10 @@ Credentials you enter are stored only in the local, git-ignored
 - **Steam matchmaking** — either paste a single share code
   (`CSGO-XXXX-...`) for a one-off download, or fill in Steam Web API key +
   SteamID64 + match sharing auth key + one known share code to list recent
-  official matches. Expired replays can no longer be fetched.
+  official matches. The first listing walks your history match-by-match from
+  the known code, so it can take minutes; afterwards a saved cursor makes it
+  fast (requires the Steam client running and logged in). Expired replays
+  (Steam keeps them ~1 month) can no longer be fetched.
 
 HLTV is not supported: hltv.org sits behind Cloudflare, so programmatic
 scraping breaks constantly — download pro-match demos manually instead.
