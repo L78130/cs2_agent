@@ -240,15 +240,22 @@ def download_fetch(req: DownloadFetchRequest):
         saved = download.load_credentials()
         saved[req.platform] = req.creds
         download.save_credentials(saved)
-    return _register_demo(dest)
+    info = _register_demo(dest)
+    download.update_match_cache(req.platform, str(req.match.get("match_id")),
+                                map=info["map"], rounds=info["rounds_played"])
+    return info
 
 
 @app.post("/api/download/sharecode")
 def download_sharecode(req: ShareCodeRequest):
     """One-off Steam matchmaking demo from a share code (CSGO-XXXX-...)."""
+    code = req.share_code.strip()
     try:
-        url = download.resolve_steam_share_code(req.share_code.strip())
-        dest = download.download_demo(url, DEMOS_DIR, req.share_code.strip())
+        url = download.resolve_steam_share_code(code)
+        dest = download.download_demo(url, DEMOS_DIR, code)
     except Exception as e:
         raise HTTPException(502, f"share code download failed: {e}")
-    return _register_demo(dest)
+    info = _register_demo(dest)
+    download.update_match_cache("steam", code, map=info["map"],
+                                rounds=info["rounds_played"])
+    return info

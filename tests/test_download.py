@@ -109,6 +109,17 @@ def test_credentials_roundtrip(tmp_path, monkeypatch):
     assert download.load_credentials() == {"5e": {"userid": "abc"}}
 
 
+def test_update_match_cache_fills_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(download, "CREDENTIALS_FILE", tmp_path / "cfg.json")
+    download.save_credentials({"steam_match_cache": [
+        {"match_id": "CSGO-A", "map": "?", "rounds": None}]})
+    download.update_match_cache("steam", "CSGO-A", map="de_nuke", rounds=24)
+    entry = download.load_credentials()["steam_match_cache"][0]
+    assert entry["map"] == "de_nuke" and entry["rounds"] == 24
+    download.update_match_cache("steam", "CSGO-MISSING", map="x")  # no-op
+    assert len(download.load_credentials()["steam_match_cache"]) == 1
+
+
 def _client():
     return TestClient(server.app)
 
@@ -132,6 +143,7 @@ def test_download_list_endpoint_bad_platform():
 
 def test_sharecode_endpoint_registers_demo(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "DEMOS_DIR", tmp_path)
+    monkeypatch.setattr(download, "CREDENTIALS_FILE", tmp_path / "cfg.json")
     monkeypatch.setattr(download, "resolve_steam_share_code",
                         lambda code: "http://x/demo.dem.bz2")
     monkeypatch.setattr(download, "download_demo",

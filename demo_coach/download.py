@@ -43,6 +43,20 @@ def save_credentials(creds: dict) -> None:
         json.dumps(creds, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def update_match_cache(platform: str, match_id: str, **fields) -> None:
+    """Fill in cache fields (e.g. map/rounds) after a demo is downloaded."""
+    cache_key = f"{platform}_match_cache"
+    try:
+        saved = load_credentials()
+        for m in saved.get(cache_key, []):
+            if m.get("match_id") == match_id:
+                m.update(fields)
+                save_credentials(saved)
+                return
+    except OSError:
+        pass
+
+
 def _meta_to_dict(m) -> dict:
     teams = []
     for t in m.teams or []:
@@ -77,18 +91,29 @@ def list_matches(platform: str, creds: dict, limit: int = 20) -> list[dict]:
     return [_meta_to_dict(m) for m in metas]
 
 
-def _steam_resolver():
+def _steam_resolver(meta: dict | None = None):
     """Share code -> replay URL via the Steam Game Coordinator.
 
     Uses akiver/boiler-writter (auto-downloaded once into cache/, git-ignored).
     Requires the Steam client to be running and logged in on this machine.
+
+    If `meta` is given, the GC response's match time is captured per share
+    code (meta[code]["matchtime"]) — the only usable metadata the CS2 GC
+    match list still carries (map name is no longer included).
     """
     import zipfile
 
     from cs_demo_downloader.steam.boiler_resolver import (
         BoilerWritterResolver, download_boiler_writter)
 
-    exe = download_boiler_writter(cache_dir="cache")
+    exe = None
+    # avoid hitting the GitHub release API (rate-limited) when we already
+    # have a cached binary from a previous run
+    cached = sorted(Path("cache").glob("boiler-writter/*/boiler-writter.exe"))
+    if cached:
+        exe = str(cached[-1])
+    if exe is None:
+        exe = download_boiler_writter(cache_dir="cache")
     # the library extracts only the exe, but boiler-writter also needs its
     # steam_api64.dll + steam_appid.txt siblings (they're in the zip's bin/)
     exe_dir = Path(exe).parent
@@ -99,7 +124,30 @@ def _steam_resolver():
                     if extra in archive.namelist():
                         target = exe_dir / Path(extra).name
                         target.write_bytes(archive.read(extra))
-    return BoilerWritterResolver(executable_path=exe).resolve_demo_url
+    resolver = BoilerWritterResolver(executable_path=exe)
+    if meta is None:
+        return resolver.resolve_demo_url
+
+    current = {}  # calls are sequential; remember which code is being parsed
+
+    def parser(path):
+        from cs_demo_downloader.steam.boiler_resolver import (
+            extract_demo_url_from_match_list)
+        from csgo.protobufs import cstrike15_gcmessages_pb2 as pb2
+        msg = pb2.CMsgGCCStrike15_v2_MatchList()
+        with open(path, "rb") as f:
+            msg.ParseFromString(f.read())
+        ts = max((m.matchtime for m in msg.matches), default=0)
+        meta[current["code"]] = {"matchtime": ts}
+        return extract_demo_url_from_match_list(msg)
+
+    resolver.match_list_parser = parser
+
+    def resolve(share_code, decoded):
+        current["code"] = share_code
+        return resolver.resolve_demo_url(share_code, decoded)
+
+    return resolve
 
 
 def _steam_matches(creds: dict, limit: int) -> list[dict]:
@@ -114,7 +162,8 @@ def _steam_matches(creds: dict, limit: int) -> list[dict]:
     from cs_demo_downloader.core.downloader_steam import (
         get_next_share_code, resolve_demo_url_from_share_code)
 
-    resolver = _steam_resolver()
+    meta = {}
+    resolver = _steam_resolver(meta)
     out = []
     code = creds["knowncode"]
     seen = {code}
@@ -132,8 +181,11 @@ def _steam_matches(creds: dict, limit: int) -> list[dict]:
         code = nxt
         url = resolve_demo_url_from_share_code(nxt, resolver)
         if url:
+            ts = meta.get(nxt, {}).get("matchtime", 0)
+            date = (time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+                    if ts else "")
             out.append({"platform": "steam", "match_id": nxt, "map": "?",
-                        "date": "", "rounds": None, "teams": [],
+                        "date": date, "rounds": None, "teams": [],
                         "demo_available": True, "demo_url": url})
     if code != creds.get("knowncode"):
         creds["knowncode"] = code
