@@ -120,6 +120,26 @@ def test_update_match_cache_fills_fields(tmp_path, monkeypatch):
     assert len(download.load_credentials()["steam_match_cache"]) == 1
 
 
+def test_peek_map_name_reads_bz2_header_only():
+    header = (b"HL2DEMO\x00" + b"\x04\x00\x00\x00" * 2
+              + b"server".ljust(260, b"\x00") + b"client".ljust(260, b"\x00")
+              + b"de_mirage".ljust(260, b"\x00") + b"\x00" * 4096)
+    resp = MagicMock()
+    resp.iter_content = lambda n: iter([bz2.compress(header)])
+    with patch("demo_coach.download.requests.get", return_value=resp):
+        assert download.peek_map_name("http://x/m.dem.bz2") == "de_mirage"
+
+
+def test_peek_map_name_cs2_header_uses_demoparser():
+    resp = MagicMock()
+    resp.iter_content = lambda n: iter([bz2.compress(b"PBDEMS2\x00" + b"\x00" * 4096)])
+    fake_parser = MagicMock()
+    fake_parser.parse_header.return_value = {"map_name": "de_nuke"}
+    with patch("demo_coach.download.requests.get", return_value=resp), \
+         patch("demoparser2.DemoParser", return_value=fake_parser):
+        assert download.peek_map_name("http://x/m.dem.bz2") == "de_nuke"
+
+
 def _client():
     return TestClient(server.app)
 

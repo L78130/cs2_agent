@@ -150,6 +150,54 @@ def _steam_resolver(meta: dict | None = None):
     return resolve
 
 
+# HL2DEMO (CS:GO) header: 8 magic + 4 demoprotocol + 4 networkprotocol +
+# 260 servername + 260 clientname, then the 260-byte map name
+_DEMO_MAP_OFFSET = 8 + 4 + 4 + 260 + 260
+
+
+def peek_map_name(url: str, timeout: int = 20) -> str | None:
+    """Map name from a remote demo's header, without downloading it.
+
+    Streams just enough of the (optionally bz2-compressed) file to decode the
+    demo header, then aborts the connection — under 1 MB instead of hundreds
+    of MB. CS2 (PBDEMS2) headers are parsed with demoparser2 on a truncated
+    temp file (its message framing changed across builds); legacy HL2DEMO
+    headers are read at the fixed offset. Returns None on any failure.
+    """
+    try:
+        r = requests.get(url, stream=True, timeout=timeout)
+        r.raise_for_status()
+        decomp = (bz2.BZ2Decompressor()
+                  if url.split("?")[0].endswith(".bz2") else None)
+        buf = b""
+        for chunk in r.iter_content(64 * 1024):
+            # bz2 decompressors buffer a full block (~0.5 MB in) before
+            # emitting anything, so buf may stay empty for several chunks
+            buf += decomp.decompress(chunk) if decomp else chunk
+            if len(buf) >= 256 * 1024:
+                break
+        r.close()
+    except Exception:
+        return None
+    if buf[:8] == b"PBDEMS2\x00":
+        import tempfile
+        from demoparser2 import DemoParser
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".dem", delete=False) as f:
+                f.write(buf)
+                tmp = f.name
+            try:
+                return DemoParser(tmp).parse_header().get("map_name") or None
+            finally:
+                os.remove(tmp)
+        except Exception:
+            return None
+    if buf[:8] == b"HL2DEMO\x00":
+        raw = buf[_DEMO_MAP_OFFSET:_DEMO_MAP_OFFSET + 260].split(b"\x00")[0]
+        return raw.decode("ascii", "replace") or None
+    return None
+
+
 def _steam_matches(creds: dict, limit: int) -> list[dict]:
     """Walk Steam share-code history forward from knowncode, newest first.
 
@@ -192,13 +240,21 @@ def _steam_matches(creds: dict, limit: int) -> list[dict]:
     out.reverse()
     # The ratchet means future walks only see NEW matches; keep a small cache
     # so "list recent matches" still shows recent history after the cursor
-    # has caught up.
+    # has caught up. CS2's GC listings no longer carry map names, so peek the
+    # demo header (a few KB) for entries we haven't enriched yet.
     try:
         saved = load_credentials()
         fresh = {m["match_id"] for m in out}
         merged = (out + [m for m in saved.get("steam_match_cache", [])
                          if m.get("match_id") not in fresh])[:30]
-        if merged and merged != saved.get("steam_match_cache"):
+        changed = merged != saved.get("steam_match_cache")
+        for m in merged[:10]:
+            if m.get("map") in (None, "", "?") and m.get("demo_url"):
+                name = peek_map_name(m["demo_url"])
+                if name:
+                    m["map"] = name
+                    changed = True
+        if merged and changed:
             saved["steam_match_cache"] = merged
             save_credentials(saved)
         if merged:
