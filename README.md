@@ -98,13 +98,26 @@ Credentials you enter are stored only in the local, git-ignored
   `partner.wmpvp.com`, then copy the token from the cookies (phone login) or
   from the `#/login?...&token=...` URL fragment (Steam login). Tokens expire;
   re-copy if downloads stop working.
-- **Steam matchmaking** — either paste a single share code
-  (`CSGO-XXXX-...`) for a one-off download, or fill in Steam Web API key +
-  SteamID64 + match sharing auth key + one known share code to list recent
-  official matches. The first listing walks your history match-by-match from
-  the known code, so it can take minutes; afterwards a saved cursor makes it
-  fast (requires the Steam client running and logged in). Expired replays
-  (Steam keeps them ~1 month) can no longer be fetched.
+- **Steam matchmaking** — list your official MM matches, or grab one match
+  directly. Preparation:
+  1. Get a Steam Web API key at
+     [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey).
+  2. Create a match-sharing authentication code at
+     [steamcommunity.com/my/gcpd/730?tab=matchhistory](https://steamcommunity.com/my/gcpd/730?tab=matchhistory)
+     (this is the `steamidkey` field).
+  3. Copy any one share code from CS2 → Watch → Your Matches → open a match →
+     copy icon in the bottom-right corner (the `knowncode` field).
+  4. Keep the Steam client running and logged in while listing/downloading —
+     replay URLs are resolved through the Game Coordinator by a local
+     boiler-writter binary (downloaded once into `cache/`).
+
+  Then click **List recent matches**. The first listing walks your history
+  one match at a time from the known code, so it can take minutes; a saved
+  cursor plus a local match cache make later listings fast. Rows show the
+  match date immediately; map and round count appear once you've downloaded
+  that match (CS2's GC listings no longer expose map names). Alternatively,
+  paste a single share code into the quick box for a one-off download.
+  Expired replays (Steam keeps them ~1 month) return a clear 404 error.
 
 HLTV is not supported: hltv.org sits behind Cloudflare, so programmatic
 scraping breaks constantly — download pro-match demos manually instead.
