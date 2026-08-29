@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from demo_coach import replay
+from demo_coach import download, replay
 from demo_coach.agent import CoachAgent
 from demo_coach.radar import load_calibration
 from demo_coach.tools import MatchContext, build_context, dispatch
@@ -24,6 +24,19 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 CONTEXTS: dict[str, MatchContext] = {}
 AGENTS: dict[str, CoachAgent] = {}
 DEMO_PATHS: dict[str, str] = {}  # demo_id -> uploaded .dem path (replay source)
+
+
+@app.on_event("startup")
+def _open_browser():
+    """Open the UI in the default browser on server start.
+    Opt out with DEMO_COACH_NO_BROWSER=1 (start.bat sets this and opens the
+    browser itself, so you never get duplicate tabs)."""
+    if os.environ.get("DEMO_COACH_NO_BROWSER"):
+        return
+    import threading
+    import webbrowser
+    port = os.environ.get("DEMO_COACH_PORT", "8000")
+    threading.Timer(1.0, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
 
 
 class ChatRequest(BaseModel):
@@ -162,3 +175,80 @@ def round_replay(demo_id: str, n: int):
     if data is None:
         raise HTTPException(404, f"no round {n}")
     return data
+
+
+# ---- demo downloads (5E / Perfect World / Steam matchmaking) ----
+
+class DownloadListRequest(BaseModel):
+    platform: str
+    creds: dict
+    save: bool = True
+    limit: int = 20
+
+
+class DownloadFetchRequest(BaseModel):
+    platform: str
+    creds: dict
+    match: dict
+    save: bool = True
+
+
+class ShareCodeRequest(BaseModel):
+    share_code: str
+
+
+def _register_demo(dest: Path) -> dict:
+    """Parse a downloaded demo and register it like an upload."""
+    try:
+        ctx = build_context(str(dest))
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(422, f"failed to parse demo: {e}")
+    CONTEXTS[ctx.parsed.demo_id] = ctx
+    DEMO_PATHS[ctx.parsed.demo_id] = str(dest)
+    return {"demo_id": ctx.parsed.demo_id, "map": ctx.summary["map"],
+            "rounds_played": ctx.summary["rounds_played"]}
+
+
+@app.get("/api/download/config")
+def download_config():
+    return download.load_credentials()
+
+
+@app.post("/api/download/list")
+def download_list(req: DownloadListRequest):
+    try:
+        out = download.list_matches(req.platform, req.creds, req.limit)
+    except KeyError as e:
+        raise HTTPException(400, f"missing credential: {e}")
+    except Exception as e:
+        raise HTTPException(502, f"{req.platform} list failed: {e}")
+    if req.save:
+        saved = download.load_credentials()
+        saved[req.platform] = req.creds
+        download.save_credentials(saved)
+    return out
+
+
+@app.post("/api/download/fetch")
+def download_fetch(req: DownloadFetchRequest):
+    try:
+        dest = download.fetch(req.platform, req.creds, req.match, DEMOS_DIR)
+    except Exception as e:
+        raise HTTPException(502, f"download failed: {e}")
+    if req.save:
+        saved = download.load_credentials()
+        saved[req.platform] = req.creds
+        download.save_credentials(saved)
+    return _register_demo(dest)
+
+
+@app.post("/api/download/sharecode")
+def download_sharecode(req: ShareCodeRequest):
+    """One-off Steam matchmaking demo from a share code (CSGO-XXXX-...)."""
+    try:
+        url = download.resolve_steam_share_code(req.share_code.strip())
+        dest = download.download_demo(url, DEMOS_DIR, req.share_code.strip())
+    except Exception as e:
+        raise HTTPException(502, f"share code download failed: {e}")
+    return _register_demo(dest)

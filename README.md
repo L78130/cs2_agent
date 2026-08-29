@@ -60,6 +60,11 @@ exit.
 
 ## Web UI
 
+Double-click **`start.bat`** (or pin it to the taskbar): it starts the server
+if it isn't running and opens the page — one click, no terminal. Starting the
+server manually with the command below also auto-opens the browser tab
+(opt out with `DEMO_COACH_NO_BROWSER=1`).
+
 ```bash
 ./.venv/Scripts/python.exe -m uvicorn demo_coach.web.server:app
 ```
@@ -78,6 +83,28 @@ Features:
 - **Streaming chat** — the coach's answer streams token by token (SSE);
   token usage per message and cumulative per demo is shown in the top-right
   corner of the header (locally estimated when the API omits usage, marked 约).
+
+### Downloading demos from platforms
+
+The sidebar's **⬇ Download demos** panel pulls your matches straight from
+5EPlay, Perfect World Arena, or Steam matchmaking (via the MIT-licensed
+[cs-demo-downloader](https://github.com/WangChuDi/CS-Demo-Downloader)).
+Credentials you enter are stored only in the local, git-ignored
+`download_config.json`:
+
+- **5EPlay** — just your userid: the tail of your profile URL
+  (`https://www.5eplay.com/player/<userid>`). No login needed.
+- **Perfect World (PWA)** — your SteamID64 plus an `access_token`: log in at
+  `partner.wmpvp.com`, then copy the token from the cookies (phone login) or
+  from the `#/login?...&token=...` URL fragment (Steam login). Tokens expire;
+  re-copy if downloads stop working.
+- **Steam matchmaking** — either paste a single share code
+  (`CSGO-XXXX-...`) for a one-off download, or fill in Steam Web API key +
+  SteamID64 + match sharing auth key + one known share code to list recent
+  official matches. Expired replays can no longer be fetched.
+
+HLTV is not supported: hltv.org sits behind Cloudflare, so programmatic
+scraping breaks constantly — download pro-match demos manually instead.
 
 ## Tests
 

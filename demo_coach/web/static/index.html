@@ -40,6 +40,23 @@
   .match-item.active { border-color: var(--accent); }
   .match-item .sub { color: var(--dim); font-size: .75rem; margin-top: .2rem; }
 
+  .btn.alt { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+  #dl-panel { display: flex; flex-direction: column; gap: .5rem; font-size: .8rem; }
+  #dl-panel select, #dl-panel input {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: .4rem .5rem; font-size: .78rem; width: 100%;
+  }
+  #dl-panel .btn.sm { padding: .35rem .6rem; font-size: .78rem; }
+  #dl-list { display: flex; flex-direction: column; gap: .4rem; max-height: 38vh; overflow-y: auto; }
+  .dl-item { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: .45rem .55rem; font-size: .75rem; }
+  .dl-item .drow { display: flex; justify-content: space-between; align-items: center; gap: .4rem; }
+  .dl-item .sub { color: var(--dim); font-size: .7rem; margin-top: .15rem; }
+  .dl-item button {
+    background: var(--accent); color: #111; border: none; border-radius: 4px;
+    padding: .15rem .5rem; font-size: .72rem; cursor: pointer; white-space: nowrap;
+  }
+  .dl-item button:disabled { opacity: .4; cursor: default; }
+
   #center { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 1rem; }
   #rounds { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .8rem; min-height: 2rem; }
   .rnd {
@@ -210,6 +227,22 @@
   <div id="sidebar">
     <input type="file" id="file" accept=".dem" hidden>
     <button class="btn" id="upload-btn" onclick="document.getElementById('file').click()">Upload .dem</button>
+    <button class="btn alt" onclick="document.getElementById('dl-panel').hidden = !document.getElementById('dl-panel').hidden">⬇ Download demos</button>
+    <div id="dl-panel" hidden>
+      <select id="dl-platform" onchange="dlPlatformChanged()">
+        <option value="5e">5EPlay</option>
+        <option value="pwa">Perfect World (PWA)</option>
+        <option value="steam">Steam matchmaking</option>
+      </select>
+      <div id="dl-fields"></div>
+      <div id="dl-share" hidden>
+        <input id="dl-sharecode" placeholder="or paste a share code: CSGO-XXXX-...">
+        <button class="btn sm" onclick="dlShareCode()">Download by code</button>
+      </div>
+      <button class="btn sm" onclick="dlList()">List recent matches</button>
+      <div id="dl-list"></div>
+      <span class="hint" style="font-size:.7rem">credentials are stored locally only (download_config.json, git-ignored)</span>
+    </div>
     <div id="match-list"></div>
   </div>
 
@@ -296,6 +329,88 @@ async function upload() {
     await refreshMatches(j.demo_id);
   } finally { overlay(false); $("file").value = ""; }
 }
+
+// ---- demo downloads (5E / PWA / Steam) ----
+const DL_FIELDS = {
+  "5e": [["userid", "5E userid (tail of your profile URL)"]],
+  "pwa": [["steamid", "SteamID64"], ["access_token", "PWA access_token"]],
+  "steam": [["api_key", "Steam Web API key"], ["steamid", "SteamID64"],
+            ["steamidkey", "match sharing auth key"], ["knowncode", "one known share code"]],
+};
+let dlCreds = {};
+
+function dlPlatformChanged() {
+  const p = $("dl-platform").value;
+  $("dl-share").hidden = p !== "steam";
+  $("dl-fields").innerHTML = DL_FIELDS[p].map(([k, label]) =>
+    `<input id="dl-${k}" placeholder="${label}" value="${(dlCreds[p] && dlCreds[p][k]) || ""}">`
+  ).join("");
+}
+
+function dlReadCreds() {
+  const creds = {};
+  for (const [k] of DL_FIELDS[$("dl-platform").value])
+    creds[k] = $(`dl-${k}`).value.trim();
+  return creds;
+}
+
+async function dlList() {
+  const platform = $("dl-platform").value;
+  overlay(true, "fetching match list...");
+  try {
+    const r = await fetch("/api/download/list", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ platform, creds: dlReadCreds(), save: true }),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert(j.detail); return; }
+    $("dl-list").innerHTML = j.map((m, i) => {
+      const score = (m.teams || []).map(t => t.score ?? "?").join(" : ");
+      return `<div class="dl-item">
+        <div class="drow"><b>${m.map}</b>
+          <button ${m.demo_available ? "" : "disabled"}
+            onclick='dlFetch(${JSON.stringify(m.match_id)}, ${i})'>⬇ get</button></div>
+        <div class="sub">${m.date}${score ? " · " + score : ""}${m.rounds ? " · " + m.rounds + " rounds" : ""}</div>
+      </div>`;
+    }).join("") || '<span class="hint">no matches found</span>';
+    window._dlMatches = j;
+  } finally { overlay(false); }
+}
+
+async function dlFetch(matchId, idx) {
+  const platform = $("dl-platform").value;
+  const match = (window._dlMatches || [])[idx];
+  if (!match) return;
+  overlay(true, "downloading & parsing demo... (first parse takes ~30s)");
+  try {
+    const r = await fetch("/api/download/fetch", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ platform, creds: dlReadCreds(), match, save: true }),
+    });
+    const j = await r.json();
+    if (!r.ok) { overlay(false); alert(j.detail); return; }
+    await refreshMatches(j.demo_id);
+  } finally { overlay(false); }
+}
+
+async function dlShareCode() {
+  const code = $("dl-sharecode").value.trim();
+  if (!code) return;
+  overlay(true, "resolving share code & downloading...");
+  try {
+    const r = await fetch("/api/download/sharecode", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ share_code: code }),
+    });
+    const j = await r.json();
+    if (!r.ok) { overlay(false); alert(j.detail); return; }
+    await refreshMatches(j.demo_id);
+  } finally { overlay(false); }
+}
+
+fetch("/api/download/config").then(r => r.json()).then(c => {
+  dlCreds = c; dlPlatformChanged();
+}).catch(() => dlPlatformChanged());
 
 async function refreshMatches(selectId) {
   const list = await (await fetch("/api/matches")).json();

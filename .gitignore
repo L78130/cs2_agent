@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 cache/
+download_config.json
+steam_api.txt

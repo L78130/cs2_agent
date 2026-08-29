@@ -69,7 +69,7 @@ function Image() {
 const performance = { now(){ return 1000; } };
 let __rafCb = null;
 function requestAnimationFrame(cb){ __rafCb = cb; }
-function fetch(){ throw new Error("fetch should not be called in this harness"); }
+function fetch(){ return Promise.reject(new Error("offline in harness")); }
 function alert(m){ throw new Error("alert: " + m); }
 """
 
